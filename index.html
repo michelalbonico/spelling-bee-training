@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spelling Bee Challenge</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f0f8ff;
+            color: #333;
+            margin: 0;
+            padding: 20px;
+        }
+        h1, h2 {
+            color: #2c3e50;
+        }
+        #game-setup, #game {
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #fff;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            border-radius: 8px;
+        }
+        label {
+            display: block;
+            margin-bottom: 10px;
+            font-weight: bold;
+        }
+        input[type="text"], .word-input {
+            width: calc(100% - 22px);
+            padding: 10px;
+            margin-bottom: 20px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+        button {
+            display: inline-block;
+            padding: 10px 20px;
+            margin-top: 10px;
+            background-color: #3498db;
+            color: #fff;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #2980b9;
+        }
+        .player-container {
+            margin-bottom: 20px;
+        }
+        .player {
+            margin-bottom: 10px;
+            padding: 10px;
+            background-color: #ecf0f1;
+            border-radius: 4px;
+        }
+        .leaderboard div {
+            padding: 5px 0;
+        }
+        #current-word {
+            margin-bottom: 20px;
+        }
+        #current-word em {
+            display: block;
+            margin-top: 10px;
+            color: #7f8c8d;
+        }
+    </style>
+</head>
+<body>
+    <h1>Spelling Bee Challenge</h1>
+    <div id="game-setup">
+        <label for="player-names">Enter player names (comma separated):</label>
+        <input type="text" id="player-names">
+        <button onclick="startGame()">Start Game</button>
+    </div>
+    <div id="game" style="display:none;">
+        <div id="players"></div>
+        <div id="current-word"></div>
+        <h2>Leaderboard</h2>
+        <div id="leaderboard"></div>
+    </div>
+    <script>
+        let players = [];
+        let currentTurn = 0;
+        let words = [];
+        let currentWord = {};
+        let roundCounts = [];
+
+        async function startGame() {
+            const playerNames = document.getElementById('player-names').value.split(',');
+            if (playerNames.length < 1 || playerNames[0].trim() === "") {
+                alert('Please enter at least one player name.');
+                return;
+            }
+            players = playerNames.map(name => ({ name: name.trim(), score: 0 }));
+            roundCounts = new Array(players.length).fill(0);
+            document.getElementById('game-setup').style.display = 'none';
+            document.getElementById('game').style.display = 'block';
+            document.getElementById('current-word').style = 'block';
+            await loadWords();
+            if (words.length === 0) {
+                alert('No words loaded. Please check the CSV file.');
+                return;
+            }
+            displayPlayers();
+            nextTurn();
+        }
+
+        async function loadWords() {
+            try {
+                const response = await fetch('http://192.168.0.123:8000/words.csv');
+                const data = await response.text();
+                const rows = data.split('\n').slice(1); // skip header
+                rows.forEach(row => {
+                    const [word, difficulty, sentence] = row.split(',');
+                    words.push({ word, difficulty, sentence });
+                });
+            } catch (error) {
+                alert('Failed to load words. Please check the CSV file URL and network connection.');
+            }
+        }
+
+        function displayPlayers() {
+            const playersDiv = document.getElementById('players');
+            playersDiv.innerHTML = '';
+            players.forEach(player => {
+                const playerDiv = document.createElement('div');
+                playerDiv.className = 'player';
+                playerDiv.innerHTML = `
+                    <span>${player.name} - Rounds: ${roundCounts[players.indexOf(player)]}</span>
+                `;
+                playersDiv.appendChild(playerDiv);
+            });
+        }
+
+        function nextTurn() {
+            if (words.length === 0) {
+                alert('Game over!');
+                return;
+            }
+            currentWord = words.splice(Math.floor(Math.random() * words.length), 1)[0];
+            const currentPlayer = players[currentTurn % players.length];
+            const wordDiv = document.getElementById('current-word');
+            wordDiv.innerHTML = `
+                <div><strong>${currentPlayer.name}'s turn:</strong></div>
+                <div>Listen to the word and write it down:</div>
+                <input type="text" class="word-input" id="word-input">
+                <button id="submitButton" onclick="checkWord()">Submit</button>
+                <button onclick="playWord()">Play Word</button>
+                <button onclick="playSentence()">Play Sentence</button>
+            `;
+            document.getElementById('word-input').focus();
+
+            // Add event listener for Enter key
+            document.getElementById('word-input').addEventListener('keypress', function(event) {
+                if (event.key === 'Enter') {
+                    event.preventDefault();
+                    document.getElementById('submitButton').click();
+                }
+            });
+
+            playWord();
+        }
+
+        function playWord() {
+            const utterance = new SpeechSynthesisUtterance(currentWord.word);
+            utterance.lang = 'en-US';
+            utterance.rate = 0.7;
+            speechSynthesis.speak(utterance);
+        }
+
+        function playSentence() {
+            const utterance = new SpeechSynthesisUtterance(currentWord.sentence);
+            utterance.lang = 'en-US';
+            utterance.rate = 0.8;
+            speechSynthesis.speak(utterance);
+        }
+
+        function checkWord() {
+            const inputWord = document.getElementById('word-input').value.trim();
+            const currentPlayer = players[currentTurn % players.length];
+            if (inputWord.toLowerCase() === currentWord.word.toLowerCase()) {
+                currentPlayer.score++;
+                alert('Correct!');
+            } else {
+                alert(`Incorrect! The correct word was "${currentWord.word}"`);
+            }
+            roundCounts[currentTurn % players.length]++;
+            currentTurn++;
+            updateLeaderboard();
+            displayPlayers();
+            nextTurn();
+        }
+
+        function updateLeaderboard() {
+            const leaderboard = document.getElementById('leaderboard');
+            const sortedPlayers = [...players].sort((a, b) => b.score - a.score);
+            leaderboard.innerHTML = sortedPlayers.map(player => `
+                <div>${player.name}: ${player.score}</div>
+            `).join('');
+        }
+    </script>
+</body>
+</html>
